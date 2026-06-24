@@ -1,134 +1,98 @@
 import discord
 from discord.ext import commands, tasks
 import requests
-from bs4 import BeautifulSoup
-import os
+import feedparser
 
-TOKEN = os.getenv("TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+TOKEN = "YOUR_DISCORD_BOT_TOKEN"
+CHANNEL_ID = 123456789012345678  # ID kênh bạn muốn bot gửi
 
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
 
-last_patch = None
+latest_link = None
 
 
+# ================= FETCH PATCH =================
 def get_latest_patch():
-    url = "https://www.leagueoflegends.com/en-us/news/tags/patch-notes/"
-    res = requests.get(url)
-    soup = BeautifulSoup(res.text, "html.parser")
+    url = "https://www.leagueoflegends.com/en-us/rss.xml"
+    feed = feedparser.parse(url)
 
-    articles = soup.find_all("a", href=True)
+    for entry in feed.entries:
+        if "Patch" in entry.title:
+            title = entry.title
+            link = entry.link
 
-    for a in articles:
-        link = a["href"]
-
-        if "patch" in link and "notes" in link:
-            title = a.text.strip()
-
-            if "Patch" in title:
-                full_link = "https://www.leagueoflegends.com" + link
-
-                # lấy version
+            # Lấy ảnh từ nội dung
+            image = None
+            if "media_content" in entry:
+                image = entry.media_content[0]['url']
+            elif "summary" in entry:
                 import re
-                match = re.search(r"(\d+\.\d+)", title)
-                version = match.group(1) if match else "Unknown"
+                match = re.search(r'<img src="(.*?)"', entry.summary)
+                if match:
+                    image = match.group(1)
 
-                # 🔥 LẤY ẢNH TỪ BÀI PATCH
-                image = get_patch_image(full_link)
+            return title, link, image
 
-                return {
-                    "title": title,
-                    "version": version,
-                    "link": full_link,
-                    "image": image
-                }
-
-    return None
+    return None, None, None
 
 
-def get_patch_image(patch_url):
-    try:
-        res = requests.get(patch_url)
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        img = soup.find("img")
-
-        if img and img.get("src"):
-            return img["src"]
-
-    except:
-        pass
-
-    # fallback nếu lỗi
-    return "https://cmsassets.rgpub.io/sanity/images/dsfx7636/news_live/default.jpg"
-
-
-def create_embed(patch):
-    embed = discord.Embed(
-        title=f"🔥 {patch['title']}",
-        url=patch["link"],
-        description=f"📢 Patch {patch['version']} đã ra!",
-        color=0x00ff00
-    )
-
-    # ảnh lớn hơn
-    embed.set_image(url=patch["image"])
-
-    embed.add_field(
-        name="👉 Xem chi tiết",
-        value=patch["link"],
-        inline=False
-    )
-
-    return embed
-
-
+# ================= BOT READY =================
 @bot.event
 async def on_ready():
-    print(f"Bot online: {bot.user}")
+    print(f"Bot đã online: {bot.user}")
     check_update.start()
 
 
-@tasks.loop(minutes=5)
+# ================= AUTO CHECK =================
+@tasks.loop(minutes=10)
 async def check_update():
-    global last_patch
+    global latest_link
 
-    try:
-        patch = get_latest_patch()
+    channel = bot.get_channel(CHANNEL_ID)
 
-        if not patch:
-            return
+    title, link, image = get_latest_patch()
 
-        if last_patch is None:
-            last_patch = patch["version"]
-            return
+    if not link:
+        print("Không lấy được patch")
+        return
 
-        if patch["version"] != last_patch:
-            last_patch = patch["version"]
+    if link != latest_link:
+        latest_link = link
 
-            channel = bot.get_channel(CHANNEL_ID)
+        embed = discord.Embed(
+            title=title,
+            url=link,
+            description="🔔 Patch mới từ Riot!",
+            color=0x00ff00
+        )
 
-            if channel:
-                embed = create_embed(patch)
-                await channel.send(embed=embed)
+        if image:
+            embed.set_image(url=image)
 
-                print("Đã gửi patch:", patch["version"])
-
-    except Exception as e:
-        print("Lỗi:", e)
+        await channel.send(embed=embed)
+        print("Đã gửi patch mới!")
 
 
-# 🧪 TEST COMMAND
+# ================= TEST COMMAND =================
 @bot.command()
 async def test(ctx):
-    patch = get_latest_patch()
+    title, link, image = get_latest_patch()
 
-    if patch:
-        embed = create_embed(patch)
-        await ctx.send("✅ Test OK", embed=embed)
-    else:
-        await ctx.send("❌ Không lấy được patch")
+    if not link:
+        await ctx.send("❌ Không lấy được dữ liệu patch!")
+        return
+
+    embed = discord.Embed(
+        title=title,
+        url=link,
+        description="🧪 Test patch",
+        color=0xff0000
+    )
+
+    if image:
+        embed.set_image(url=image)
+
+    await ctx.send(embed=embed)
 
 
 bot.run(TOKEN)
