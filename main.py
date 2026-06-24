@@ -20,25 +20,45 @@ async def check_updates():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
 
+    # 🚀 Gửi 3 bản cập nhật gần nhất khi bot khởi động
+    try:
+        feed = feedparser.parse(RSS_URL)
+
+        if feed.entries:
+            top3 = feed.entries[:3]
+
+            await channel.send("📢 **3 bản cập nhật LoL gần nhất:**")
+
+            for entry in top3:
+                embed = discord.Embed(
+                    title=entry.title,
+                    url=entry.link,
+                    description="🔔 Cập nhật từ Riot Games",
+                    color=0x00ff00
+                )
+                await channel.send(embed=embed)
+
+            # lưu bản mới nhất để tránh gửi lại
+            last_link = top3[0].link
+
+    except Exception as e:
+        print("Lỗi khi lấy top 3:", e)
+
+    # 🔁 Loop check update mới
     while not client.is_closed():
         try:
             feed = feedparser.parse(RSS_URL)
 
             if feed.entries:
                 latest = feed.entries[0]
-                title = latest.title
-                link = latest.link
 
-                if last_link is None:
-                    last_link = link
-
-                elif link != last_link:
-                    last_link = link
+                if latest.link != last_link:
+                    last_link = latest.link
 
                     embed = discord.Embed(
                         title="🚨 LoL Update mới!",
-                        description=f"**{title}**\n{link}",
-                        color=0x00ff00
+                        description=f"**{latest.title}**\n{latest.link}",
+                        color=0xff0000
                     )
 
                     await channel.send(embed=embed)
@@ -47,7 +67,6 @@ async def check_updates():
             print("Error:", e)
 
         await asyncio.sleep(60)
-
 
 @client.event
 async def on_ready():
