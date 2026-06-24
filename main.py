@@ -9,7 +9,7 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-last_version = None
+last_version = "test_version"
 
 
 def get_latest_version():
